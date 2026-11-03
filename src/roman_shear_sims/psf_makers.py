@@ -5,7 +5,7 @@ from galsim import roman
 
 from .constant import IMCOM_PSF_FWHM
 
-PSF_TYPES = ["gauss", "airy", "obs_airy", "roman", "imcom"]
+PSF_TYPES = ["gauss", "airy", "obs_airy", "moffat", "roman", "imcom"]
 
 _rad_to_arcsec = 180 * 3600 / np.pi
 
@@ -18,7 +18,7 @@ class PSFMaker:
     ----------
     psf_type : str
         The type of PSF to create.
-        Options are 'gauss', 'airy', 'obs_airy', 'roman', 'imcom'.
+        Options are 'gauss', 'airy', 'obs_airy', 'moffat', 'roman', 'imcom'.
     fwhm : float, optional
         The full width at half maximum of the Gaussian PSF in arcseconds.
     chromatic : bool, optional
@@ -116,6 +116,8 @@ class PSFMaker:
                 diam=roman.diameter,
                 obscuration=roman.obscuration,
             )
+        elif self.psf_type == 'moffat':
+            psf = galsim.Moffat(beta=3.5, fwhm=self.fwhm)
         elif self.psf_type == "roman":
             wave = None if self.chromatic else self.wave
             psf = roman.getPSF(

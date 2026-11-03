@@ -56,8 +56,8 @@ def make_sim(
     psf_maker : PSFMaker
         The PSF maker to use for the simulation.
     simu_type : str, optional
-        The type of simulation to run. Options are 'sca' for SCA simulation
-        and 'imcom' for IMCOM simulation. Default: 'sca'.
+        The type of simulation to run. Options are 'sca' for SCA simulation,
+        'imcom' for IMCOM simulation, 'sh19' for SH19 simulation. Default: 'sca'.
     n_epochs : int, optional
         The number of epochs to simulate. Default: 6.
     exp_time : float, optional
@@ -159,7 +159,7 @@ def make_sim(
             leave=False,
             disable=not verbose,
         ):
-            if simu_type == "sca":
+            if simu_type in ["sca", "sh19"]:
                 epoch_dict = make_exp(
                     rng,
                     galaxy_catalog,
@@ -212,7 +212,7 @@ def make_sim(
             else:
                 raise ValueError(
                     f"Unknown simu_type: {simu_type}. "
-                    "Expected 'sca' or 'imcom'."
+                    "Expected 'sca', 'imcom', or 'sh19'."
                 )
         final_dict[band] = epoch_list
 

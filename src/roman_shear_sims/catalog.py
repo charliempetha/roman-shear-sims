@@ -1,4 +1,5 @@
 import numpy as np
+from scipy.stats import skewnorm
 
 import galsim
 from galsim import roman
@@ -80,9 +81,7 @@ class SimpleGalaxyCatalog:
         self.img_size = img_size
         self.rng = np.random.RandomState(seed)
         if gal_type not in GAL_TYPES:
-            raise ValueError(
-                f"gal_type must be one of {GAL_TYPES}, got {gal_type}"
-            )
+            raise ValueError(f"gal_type must be one of {GAL_TYPES}, got {gal_type}")
         self.gal_type = gal_type
 
         self._hlr = hlr
@@ -135,9 +134,7 @@ class SimpleGalaxyCatalog:
         for i in range(self.getNObjects()):
             flux = self.get_flux(i, zp)
             if self._chromatic:
-                gsobject = self._get_gsobject(i).withFlux(
-                    flux, bandpass=bandpass
-                )
+                gsobject = self._get_gsobject(i).withFlux(flux, bandpass=bandpass)
                 gsobject.flux = flux
             else:
                 gsobject = self._get_gsobject(i).withFlux(flux)
@@ -241,9 +238,7 @@ class SimpleGalaxyCatalog:
 
     def _get_sed(self, gal_sed_path):
         sed_wave, avg_gal_sed_arr = np.load(gal_sed_path)
-        sed_lt = galsim.LookupTable(
-            sed_wave, avg_gal_sed_arr, interpolant="linear"
-        )
+        sed_lt = galsim.LookupTable(sed_wave, avg_gal_sed_arr, interpolant="linear")
         sed = galsim.SED(sed_lt, wave_type="nm", flux_type="fnu")
         return sed
 
@@ -292,6 +287,8 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         seed,
         simu_type="sca",
         flux_range=None,
+        flux_dist="uniform",
+        hlr_range=None,
         layout_kind="grid",
         buffer=0,
         spacing=5.0,
@@ -305,6 +302,11 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
         if flux_range is None:
             flux_range = [10, 10_000]
         self._flux_range = flux_range
+        self.flux_dist = flux_dist
+
+        if hlr_range is None:
+            hlr_range = [0.1, 0.4]
+        self._hlr_range = hlr_range
         self.set_bandpass_ref(ref_band)
         super().__init__(
             img_size,
@@ -362,9 +364,19 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
     def _set_gsobject(self, gal_sed=1):
         self.gsobject_list = []
         for _ in range(self._n_gal):
-            flux_tot = self.rng.uniform(
-                low=self._flux_range[0], high=self._flux_range[1]
-            )
+            if self.flux_dist == "uniform":
+                flux_tot = self.rng.uniform(
+                    low=self._flux_range[0], high=self._flux_range[1]
+                )
+            elif self.flux_dist == "log_normal":
+                log_flux = skewnorm.rvs(
+                    a=5,
+                    loc=np.log(5),
+                    scale=1,
+                    random_state=self.rng,
+                )
+                flux_tot = np.exp(log_flux)
+                flux_tot = np.clip(flux_tot, self._flux_range[0], self._flux_range[1])
 
             BT_flux = self.rng.uniform(low=0, high=1)
             bulge_flux = flux_tot * BT_flux
@@ -372,7 +384,7 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
 
             disk_ell = get_g_BA(self.rng, sigma=0.2, size=1)[0]
             disk_theta = self.rng.uniform(0, 2 * np.pi)
-            disk_hlr = self.rng.uniform(0.1, 0.4)
+            disk_hlr = self.rng.uniform(self._hlr_range[0], self._hlr_range[1])
 
             bulge_ell = self.rng.uniform(0, 0.4) * disk_ell
             bulge_theta = disk_theta
@@ -383,13 +395,11 @@ class GalaxyCatalog(SimpleGalaxyCatalog):
             bulge_x_shift = shift_amp * np.cos(shift_angle)
             bulge_y_shift = shift_amp * np.sin(shift_angle)
 
-            disk = galsim.Exponential(
-                half_light_radius=disk_hlr, flux=disk_flux
-            ).shear(g=disk_ell, beta=disk_theta * galsim.radians)
+            disk = galsim.Exponential(half_light_radius=disk_hlr, flux=disk_flux).shear(
+                g=disk_ell, beta=disk_theta * galsim.radians
+            )
             bulge = (
-                galsim.DeVaucouleurs(
-                    half_light_radius=bulge_hlr, flux=bulge_flux
-                )
+                galsim.DeVaucouleurs(half_light_radius=bulge_hlr, flux=bulge_flux)
                 .shear(g=bulge_ell, beta=bulge_theta * galsim.radians)
                 .shift(bulge_x_shift, bulge_y_shift)
             )
@@ -529,9 +539,7 @@ class DiffSkyCatalog(GalaxyCatalog):
     def _get_gsobject(self, index, bandpass=None):
         sed_dict = self.sed_comp_list[index]
         gsobj_dict = self.gsobject_list[index]
-        flux_dict, flux_tot = self._get_flux_components(
-            sed_dict, bandpass, cache=True
-        )
+        flux_dict, flux_tot = self._get_flux_components(sed_dict, bandpass, cache=True)
         # if flux_tot < self._flux_range[0] or flux_tot > self._flux_range[1]:
         #     return None
         if self._chromatic:
@@ -543,19 +551,14 @@ class DiffSkyCatalog(GalaxyCatalog):
             else:
                 gsobj = galsim.Add(
                     [
-                        gsobj_dict[comp].withFlux(
-                            flux_dict[comp], bandpass=bandpass
-                        )
+                        gsobj_dict[comp].withFlux(flux_dict[comp], bandpass=bandpass)
                         for comp in gsobj_dict
                     ]
                 )
                 gsobj.flux = flux_tot
         else:
             gsobj = galsim.Add(
-                [
-                    gsobj_dict[comp].withFlux(flux_dict[comp])
-                    for comp in gsobj_dict
-                ]
+                [gsobj_dict[comp].withFlux(flux_dict[comp]) for comp in gsobj_dict]
             )
 
         return gsobj
@@ -605,10 +608,7 @@ class DiffSkyCatalog(GalaxyCatalog):
                     .to_dict()
                 )
                 _, flux_tot = self._get_flux_components(sed_row, self._bp_ref)
-                if (
-                    flux_tot < self._flux_range[0]
-                    or flux_tot > self._flux_range[1]
-                ):
+                if flux_tot < self._flux_range[0] or flux_tot > self._flux_range[1]:
                     continue
 
                 if object_type == "diffsky_galaxy":
@@ -620,9 +620,7 @@ class DiffSkyCatalog(GalaxyCatalog):
                         rng=rng,
                     )
                 elif object_type == "star":
-                    gsobj = self._get_star_gsobject(
-                        row, sed_row, gsparams=gsparams
-                    )
+                    gsobj = self._get_star_gsobject(row, sed_row, gsparams=gsparams)
                 self.gsobject_list.append(gsobj)
                 self.sed_comp_list.append(sed_row)
                 self._get_pos(i, row["ra"], row["dec"])
@@ -678,17 +676,11 @@ class DiffSkyCatalog(GalaxyCatalog):
                     obj = galsim.Convolve(obj, galsim.Gaussian(sigma=size))
             else:
                 n = 1 if component == "disk" else 4
-                obj_ = galsim.Sersic(
-                    n=n, half_light_radius=hlr, gsparams=gsparams
-                )
+                obj_ = galsim.Sersic(n=n, half_light_radius=hlr, gsparams=gsparams)
                 obj = obj_._shear(shear)
             if self._chromatic:
                 if gal_sed is None:
-                    sed = (
-                        sed_row[component]
-                        * self._exp_time
-                        * roman.collecting_area
-                    )
+                    sed = sed_row[component] * self._exp_time * roman.collecting_area
                 else:
                     sed = gal_sed
             else:
@@ -751,8 +743,7 @@ class DiffSkyCatalog(GalaxyCatalog):
                 )
             if flux_range_tmp[0] >= flux_range_tmp[1]:
                 raise ValueError(
-                    "flux_range[0] should be less than flux_range[1], got "
-                    f"{flux_range}"
+                    f"flux_range[0] should be less than flux_range[1], got {flux_range}"
                 )
             self._flux_range = flux_range_tmp
         else:
@@ -915,8 +906,8 @@ def get_simple_pos(
     Parameters
     ----------
     simu_type : str, optional
-        The type of simulation to run. Options are 'sca' for SCA simulation
-        and 'imcom' for IMCOM simulation. Default: 'sca'.
+        The type of simulation to run. Options are 'sca' for SCA simulation,
+        'imcom' for IMCOM simulation, 'sh19' for SH19 simulation. Default: 'sca'.
     img_size : int
         Image size in pixels.
     rng : np.random.RandomState
@@ -939,13 +930,13 @@ def get_simple_pos(
         y-coordinates of the galaxies in arcsec.
 
     """
-    if simu_type == "sca":
+    if simu_type == "sca" or simu_type == "sh19":
         pixel_scale = roman.pixel_scale
     elif simu_type == "imcom":
         pixel_scale = IMCOM_PIXEL_SCALE
     else:
         raise ValueError(
-            f"simu_type must be one of ['sca', 'imcom'], got {simu_type}"
+            f"simu_type must be one of ['sca', 'imcom', 'sh19'], got {simu_type}"
         )
 
     img_size = img_size
@@ -1031,9 +1022,7 @@ def get_g_BA(rng, sigma=0.3, size=1):
     """
 
     def pdf(e, sigma):
-        return (
-            (1 - e**2) ** 2 * np.exp(-(e**2) / (2 * sigma**2)) * 2 * np.pi * e
-        )
+        return (1 - e**2) ** 2 * np.exp(-(e**2) / (2 * sigma**2)) * 2 * np.pi * e
 
     samples = []
     n_attempts = 0
