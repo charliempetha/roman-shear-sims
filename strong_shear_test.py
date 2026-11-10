@@ -818,16 +818,17 @@ if __name__ == "__main__":
     print(f"  simu_type = {simu_type}")
     print(f"  psf_type  = {psf_type}")
 
-    plot_only = False
+    plot_only = True
 
     np.random.seed(120597)  # For reproducibility of seeds across runs
 
+    n_trials = 100_000
+    noise_sig = 1e-3
+
     if not plot_only:
-        n_trials = 2048
-        noise_sig = 1e-1
         snr_cut = 2  # S/N threshold for shape measurement
 
-        g1_in_arr = [0.02, 0.04]  # , 0.06, 0.08, 0.1]
+        g1_in_arr = [0.02, 0.04, 0.06, 0.08, 0.1]
         # Generate shared seeds once so both methods run on identical realisations
         base_seeds = np.random.randint(low=1, high=2**29, size=len(g1_in_arr))
 
@@ -880,6 +881,9 @@ if __name__ == "__main__":
         plot_m_shear(fnames=fnames, results_dir=results_dir)
 
     if plot_only:
-        methods = ["metadetect", "metacal"]
-        fnames = [f"{method}_noise1e-05_512_imcom_imcom.csv" for method in methods]
+        methods = ["metadetect"]  # , "metacal"]
+        fnames = [
+            f"{method}_noise{noise_sig}_{n_trials}_{simu_type}_{psf_type}.csv"
+            for method in methods
+        ]
         plot_m_shear(fnames=fnames, results_dir=results_dir)
